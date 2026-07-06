@@ -12,7 +12,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import uvicorn
-from synthetic_data import NimbleSyntheticData
+from .synthetic_data import NimbleSyntheticData
 
 app = FastAPI(title="Nimble Mock API", version="1.0.0")
 

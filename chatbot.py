@@ -95,7 +95,7 @@ def cmd_status(data, recs):
     total_income = rev.get("total_income", 0)
     ebitda       = prof.get("ebitda", 0)
     net_income   = prof.get("net_income", 0)
-    occ_pct      = occ.get("occupancy_pct", 0)
+    occ_pct      = occ.get("pct") or occ.get("occupancy_pct", 0)
     payroll_pct  = data.get("payroll_pct", 0)
 
     health = "✅ Healthy" if not recs else (
@@ -178,7 +178,7 @@ def cmd_occupancy(data):
     total  = occ.get("total_rooms", 0)
     ooo    = occ.get("out_of_order", 0)
     sold   = occ.get("rooms_sold", 0)
-    pct    = occ.get("occupancy_pct", 0)
+    pct    = occ.get("pct") or occ.get("occupancy_pct", 0)
     ooo_p  = round(ooo / total * 100, 1) if total else 0
     icon   = "🔴" if ooo_p > 3 else "✅"
 

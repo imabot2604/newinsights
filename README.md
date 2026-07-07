@@ -1,106 +1,87 @@
-# Nimble Insights Chatbot
+# Nimble Insights
 
-AI-powered recommendation engine and chatbot layer on top of the **Nimble** hotel analytics dashboard.
+**Nimble Insights** is an AI-powered financial intelligence dashboard designed specifically for hotel operators. It automatically ingests actual P&L data from Excel and forecast targets from RMS reports, running them through a built-in rules engine to instantly detect financial anomalies—such as unexpected GOP variances, RevPAR drops, or cost overruns. 
 
-## What this is
+An embedded AI assistant (powered by Google Gemini) acts as an expert financial analyst, interpreting these alerts and the raw data to provide actionable, plain-English recommendations for revenue management and profitability improvement, directly through an interactive chat interface.
 
-This project does **not** include a forecasting model — your existing Nimble forecaster feeds the dashboard. What this adds:
+---
 
-1. **Mock Nimble API** (`mock_nimble_api/`) — a local FastAPI service that returns realistic synthetic data for all 6 dashboard tabs, so you can develop and test without the real backend.
-2. **Data Adapter** (`src/data/nimble_client.py`) — the *only* file that knows the HTTP shape of the Nimble backend. Swap the base URL in config and the whole stack points at your real backend.
-3. **Rules Engine** (`src/recommendations/`) — plain Python conditionals that turn dashboard numbers into structured, actionable findings with computed sizes (e.g. rate reduction in ₹, not vague direction).
-4. **Explanation Layer** (`src/recommendations/explain.py`) — Claude narrates the structured finding; it is forbidden from inventing or altering any number.
-5. **Chatbot** (`src/chatbot/`) — Claude with tool use. The model *never* computes a number; it only calls tools and narrates real output.
-6. **Web Widget** (`web/index.html`) — single-page chat UI for demos.
+## 🏗 Architecture
 
-## ⚠️ Figma source note
+The project has been migrated from a Python/FastAPI structure to a robust **Node.js Monorepo** powered by `pnpm`, React, and SQLite.
 
-The Figma file (`https://www.figma.com/proto/FFcaCy4ov3mzZbfMa59YLN/Nimble`) was not accessible via API at build time (no personal access token provided). The schema in `docs/architecture.md` and used throughout the codebase was confirmed from live dashboard screenshots. Re-verify field names against the Figma dev-mode inspection once access is available.
+### Tech Stack
+- **Frontend:** React, Vite, Tailwind CSS, shadcn/ui (`@workspace/nimble-insights`)
+- **Backend API:** Express, Zodios, Google Generative AI (`@workspace/api-server`)
+- **Database:** SQLite, Drizzle ORM (`@workspace/db`)
+- **Shared Code:** Zod schemas and auto-generated API clients (`@workspace/api-zod`, `@workspace/api-client-react`)
 
-## Quick start
+---
 
-### 1. Install dependencies
+## 🚀 Quick Start Guide
+
+### 1. Prerequisites
+- **Node.js** (v20+ recommended)
+- **pnpm** (Package manager for the monorepo)
+- **Gemini API Key** 
+
+### 2. Install Dependencies
+In the root directory of the project, install all workspace packages:
 ```bash
-pip install -r requirements.txt
+pnpm install
 ```
 
-### 2. Set your Anthropic API key
+### 3. Environment Configuration
+Create a `.env` file inside the `artifacts/api-server/` directory and configure the following variables:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+DATABASE_URL=file:C:/path/to/your/repo/newinsights/sqlite.db
+PORT=5000
+NODE_ENV=development
+```
+*(Make sure to replace the `DATABASE_URL` path with the absolute path to your repository root where `sqlite.db` will be created).*
+
+### 4. Initialize Database
+Initialize your SQLite database by pushing the schema:
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+# Windows (PowerShell):
+$env:DATABASE_URL="file:C:/path/to/your/repo/newinsights/sqlite.db"; pnpm --filter "@workspace/db" run push
+
+# Mac/Linux:
+DATABASE_URL="file:/path/to/your/repo/newinsights/sqlite.db" pnpm --filter "@workspace/db" run push
 ```
 
-### 3. Start the mock Nimble API
+### 5. Start the Application
+You'll need two terminal tabs to run the frontend and backend development servers concurrently.
+
+**Start the Backend (Port 5000):**
 ```bash
-uvicorn mock_nimble_api.main:app --port 8001 --reload
-# Verify: http://localhost:8001/docs
+pnpm --filter "@workspace/api-server" run dev
 ```
 
-### 4. Run the full demo (mock API + chatbot backend + opens browser)
+**Start the Frontend (Port 8001):**
 ```bash
-python scripts/run_demo.py
+pnpm --filter "@workspace/nimble-insights" run dev
 ```
 
-This starts:
-- Mock API on port 8001
-- Chatbot backend on port 8000
-- Prints the URL to open the chat widget
+### 6. Open the Dashboard
+Navigate your browser to `http://localhost:8001/` to use the Nimble Insights dashboard and interact with the AI assistant!
 
-### 5. Open the chat widget
+---
+
+## 📁 Repository Structure
+
+```text
+newinsights/
+├── artifacts/
+│   ├── api-server/         # Express backend handling Gemini, Excel parsing, and rules
+│   └── nimble-insights/    # React + Vite frontend dashboard
+├── lib/
+│   ├── api-client-react/   # Auto-generated React Query hooks for the frontend
+│   ├── api-spec/           # OpenAPI specs and Orval configuration
+│   ├── api-zod/            # Shared Zod types and Zodios API definitions
+│   └── db/                 # Drizzle ORM schema and Better-SQLite3 setup
+├── attached_assets/        # Hotel P&L Excel files and RMS DOCX forecasts
+├── package.json            # Monorepo root configurations
+└── pnpm-workspace.yaml     # Workspace declaration
 ```
-http://localhost:8000/
-```
-
-### 6. CLI chat (quick testing)
-```bash
-python -m src.chatbot.backend --cli
-```
-
-Try: *"What should we improve this month?"*
-
-## Run tests
-```bash
-pytest tests/ -v
-```
-
-## Project structure
-
-```
-nimble-insights-chatbot/
-├── README.md
-├── requirements.txt
-├── docs/architecture.md
-├── mock_nimble_api/
-│   ├── main.py              # FastAPI, one route per tab
-│   └── synthetic_data.py    # Deterministic synthetic data generator
-├── src/
-│   ├── data/
-│   │   └── nimble_client.py # Adapter — ONLY file that knows HTTP shape
-│   ├── recommendations/
-│   │   ├── models.py        # Pydantic models for structured results
-│   │   ├── rules.py         # 5 rules, plain Python conditionals
-│   │   ├── sizing.py        # Elasticity-based rate sizing
-│   │   └── explain.py       # Claude narration layer
-│   └── chatbot/
-│       ├── system_prompt.py
-│       ├── tools.py         # Tool definitions for Claude
-│       └── backend.py       # FastAPI chatbot + CLI loop
-├── web/
-│   └── index.html           # Chat widget
-├── tests/
-│   ├── test_rules.py
-│   └── test_recommendation_sizing.py
-└── scripts/
-    └── run_demo.py
-```
-
-## Swapping the mock for your real Nimble backend
-
-In `src/data/nimble_client.py`, change:
-```python
-NIMBLE_BASE_URL = os.getenv("NIMBLE_API_URL", "http://localhost:8001")
-```
-to point at your real API. No other file needs to change.
-
-## Architecture
-
-See `docs/architecture.md` for the full data-flow diagram and schema reference.

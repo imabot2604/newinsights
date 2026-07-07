@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "morphe": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/morphe/SKILL.md",
+      "computedHash": "46edce5bdc042523f3663c927029971bd986633a741f817709784b42a7768af4"
+    },
+    "zenmux-codex-pets": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-codex-pets/SKILL.md",
+      "computedHash": "9139a190b909119913f1817d6068a53fe8dffe99c69cf7d980e5adb2d9772301"
+    },
+    "zenmux-context": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-context/SKILL.md",
+      "computedHash": "2b18d28bd719a04cd6207abeeadcb45e47cbb917d271a8bb3bbdcd22021afd9e"
+    },
+    "zenmux-feedback": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-feedback/SKILL.md",
+      "computedHash": "a977eb05ed2750ec586e4130a6ab723c08b2272c59598780ab525e2ad0858011"
+    },
+    "zenmux-image-generation": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-image-generation/SKILL.md",
+      "computedHash": "2f85073413e73f8fe8880b7dbe886e6b285a913ab74200cfaf08c5ce972c7e3e"
+    },
+    "zenmux-setup": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-setup/SKILL.md",
+      "computedHash": "d304dd133435a4296524842c0c19b5c6c2f32d0fcc9d2aefd954b827f8473c0e"
+    },
+    "zenmux-statusline": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-statusline/SKILL.md",
+      "computedHash": "081a8c8435afa19d6452feace2c14f8d02d50d80637214feb71b6fa44df4c30f"
+    },
+    "zenmux-usage": {
+      "source": "ZenMux/skills",
+      "sourceType": "github",
+      "skillPath": "skills/zenmux-usage/SKILL.md",
+      "computedHash": "a34920b353a398c6e88ae7e5bfa07265ad99e73f0adde5fdac8b8326ec845faf"
+    }
+  }
+}

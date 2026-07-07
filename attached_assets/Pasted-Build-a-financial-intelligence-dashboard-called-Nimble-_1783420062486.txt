@@ -1,0 +1,47 @@
+Build a financial intelligence dashboard called "Nimble Insights" for a hospitality company. The application should act as an AI-powered financial analyst that ingests raw hotel P&L data and forecast reports, identifies anomalies, and provides strategic chatbot insights.
+
+**TECH STACK:**
+- **Backend:** Python, FastAPI, Uvicorn, python-docx, openpyxl, google-generativeai.
+- **Frontend:** Vanilla HTML, CSS, JavaScript (no React/Vue). Use Google Fonts 'Inter' and a premium, modern UI with smooth micro-animations.
+
+**PROJECT ARCHITECTURE:**
+Create the following directory structure:
+1. `/src/data/` (for parsers)
+2. `/src/recommendations/` (for the deterministic rules engine)
+3. `/src/chatbot/` (for the FastAPI backend and AI integration)
+4. `/web/` (for the frontend `index.html`)
+
+**CORE FEATURES TO IMPLEMENT:**
+
+**1. Data Ingestion (Excel & DOCX Parsers):**
+- Create `excel_loader.py`: Parse a standard hotel P&L Excel file to extract: Rooms Available, Rooms Sold, Occupancy %, ADR, RevPAR, Total Operating Revenue, Departmental Expenses, Undistributed Expenses, GOP, and EBITDA. Support both full-year and month-by-month extraction.
+- Create `docx_loader.py`: Parse a Microsoft Word forecast report (`python-docx`). Search tables for rows labeled "Revenue Forecast", "GOP Forecast", "NOI Forecast", and "Ensemble" (Rooms Sold). Extract the month-by-month financial targets for Jul-Dec 2025.
+
+**2. Deterministic Rules Engine (`rules.py`):**
+- Build a Python module that takes the actual P&L data and compares it against the DOCX forecast targets.
+- Create specific rules that return a "Recommendation" object (Severity, Finding, Recommendation) if a target is missed.
+- Rules to build:
+  - `check_profitability`: Flag if EBITDA is below the DOCX NOI Forecast.
+  - `check_gop_pct`: Calculate Target GOP % (DOCX GOP Forecast / DOCX Revenue Forecast). Flag if actual GOP % is below this target.
+  - `check_occupancy`: Calculate Target Occupancy (DOCX Rooms Sold Forecast / Actual Rooms Available). Flag if below target.
+  - `check_revenue_trend`: Flag if actual revenue misses the DOCX Revenue Forecast by more than 3%.
+
+**3. FastAPI Backend & AI Bot (`backend.py`):**
+- Create a FastAPI server serving the `/web` directory as static files.
+- Create an endpoint `POST /api/chat` that takes a `ChatRequest` (message, year, month).
+- In the endpoint: Run the Excel and DOCX parsers, run the data through the Rules Engine to generate alerts, and compile all this data into a JSON context dictionary.
+- Initialize the Google Gemini API (`gemini-3.5-flash`). Send the user's chat message along with the compiled JSON context and a system prompt instructing the AI to act as an expert hotel financial analyst. Return the AI's response. Note: Ensure `maxOutputTokens` is set to at least 4000 to prevent response truncation.
+
+**4. The Frontend Dashboard (`web/index.html`):**
+- **Aesthetics:** Use a soft gradient background (`linear-gradient(135deg, #fdf4ff 0%, #f3e8ff 50%, #e0e7ff 100%)`). The main app container should look like a floating glass-like window with soft shadows.
+- **Layout:**
+  - A narrow primary left sidebar containing icon buttons (Home, Analytics, Team, Settings).
+  - A secondary left sidebar containing a navigation menu (Hub, Data Sources).
+  - A main content area with a top header (Year selectors: 2023, 2024, 2025).
+  - A top row of 4 KPI Cards (Total Revenue, EBITDA, Occupancy, GOP Margin).
+  - A bottom layout split into two columns:
+    - **Left Column (Alerts):** An "AI Insights & Alerts" box that automatically populates the deterministic warnings from the backend rules engine.
+    - **Right Column (Chatbot):** A chat interface with a message history area, quick-action chips ("Revenue", "Expenses", "Trends"), and an input box to talk to the AI.
+- **Functionality:** On load, the UI should immediately ping `/api/chat` with the message "status" to secretly fetch the dashboard KPI numbers and alerts, populate the UI, and then allow the user to type custom questions to the AI.
+
+Please write all the files necessary to make this application run flawlessly on port 8001.

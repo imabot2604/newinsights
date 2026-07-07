@@ -1,0 +1,362 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Nimble Insights - Hotel Financial Intelligence API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: nimble
+    description: Nimble Insights financial dashboard operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /nimble/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [nimble]
+      summary: Get KPI dashboard data for a year/month
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dashboard KPI data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+
+  /nimble/alerts:
+    get:
+      operationId: getAlerts
+      tags: [nimble]
+      summary: Get rules-engine alerts comparing actuals to forecast
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alert"
+
+  /nimble/conversations:
+    get:
+      operationId: listConversations
+      tags: [nimble]
+      summary: List all chat conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NimbleConversation"
+    post:
+      operationId: createConversation
+      tags: [nimble]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NimbleConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NimbleConversation"
+
+  /nimble/conversations/{id}:
+    delete:
+      operationId: deleteConversation
+      tags: [nimble]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NimbleError"
+
+  /nimble/conversations/{id}/messages:
+    get:
+      operationId: listMessages
+      tags: [nimble]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NimbleMessage"
+    post:
+      operationId: sendMessage
+      tags: [nimble]
+      summary: Send a message and get AI response (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NimbleMessageInput"
+      responses:
+        "200":
+          description: SSE stream of AI response chunks
+          content:
+            text/event-stream: {}
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NimbleError"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    DashboardData:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: ["integer", "null"]
+        totalRevenue:
+          type: number
+        ebitda:
+          type: number
+        occupancyPct:
+          type: number
+        gopMargin:
+          type: number
+        roomsAvailable:
+          type: number
+        roomsSold:
+          type: number
+        adr:
+          type: number
+        revpar:
+          type: number
+        gop:
+          type: number
+        revenueVsForecast:
+          type: number
+        gopVsForecast:
+          type: number
+        noiVsForecast:
+          type: number
+        monthlyRevenue:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyDataPoint"
+        monthlyGop:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyDataPoint"
+        monthlyOccupancy:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyDataPoint"
+      required:
+        - year
+        - month
+        - totalRevenue
+        - ebitda
+        - occupancyPct
+        - gopMargin
+        - roomsAvailable
+        - roomsSold
+        - adr
+        - revpar
+        - gop
+        - revenueVsForecast
+        - gopVsForecast
+        - noiVsForecast
+        - monthlyRevenue
+        - monthlyGop
+        - monthlyOccupancy
+
+    MonthlyDataPoint:
+      type: object
+      properties:
+        month:
+          type: string
+        actual:
+          type: number
+        forecast:
+          type: ["number", "null"]
+      required:
+        - month
+        - actual
+        - forecast
+
+    Alert:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [high, medium, low]
+        category:
+          type: string
+        finding:
+          type: string
+        recommendation:
+          type: string
+        variance:
+          type: ["number", "null"]
+      required:
+        - severity
+        - category
+        - finding
+        - recommendation
+        - variance
+
+    NimbleConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        year:
+          type: integer
+        month:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - year
+        - month
+        - createdAt
+
+    NimbleConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        year:
+          type: integer
+        month:
+          type: ["integer", "null"]
+      required:
+        - title
+        - year
+
+    NimbleMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+
+    NimbleMessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+        year:
+          type: integer
+        month:
+          type: ["integer", "null"]
+      required:
+        - content
+        - year
+
+    NimbleError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

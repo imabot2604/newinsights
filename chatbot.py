@@ -1,76 +1,67 @@
 #!/usr/bin/env python3
 """
-Interactive Nimble Insights Chatbot
+Interactive Nimble Insights Chatbot — powered by real Excel data.
 Run: python chatbot.py
 """
 
 import os
 import sys
 import json
-import re
 from typing import Optional
 
 # ── Config ──────────────────────────────────────────────────────────────────
 os.environ.setdefault("GEMINI_API_KEY", "")   # set your key here or via env
 
-PROPERTY_ID = "prop_001"
-DATE_RANGE   = ("2026-06-01", "2026-06-30")
+DEFAULT_YEAR = 2025
 
 HELP_TEXT = """
 Available commands:
   status          - Overall hotel performance summary
-  labour          - Labour / payroll analysis
+  revenue         - Revenue breakdown by department
+  expenses        - Expense analysis (departmental + undistributed)
   profitability   - EBITDA & net income check
-  occupancy       - Room inventory & out-of-order rooms
-  str             - STR comp-set positioning (rate vs share)
+  occupancy       - Room inventory analysis
+  trends          - Monthly trend data
+  yoy             - Year-over-year comparison
   recommendations - All active recommendations
   explain <area>  - Deep-dive on a specific area
-                    e.g.  explain labour_cost
+                    e.g.  explain profitability
   data            - Raw numbers (JSON)
-  refresh         - Re-fetch data from API
+  year <YYYY>     - Switch to a different year (e.g. year 2024)
   help            - Show this menu
   quit / exit     - Exit chatbot
 """
 
 AREA_ALIASES = {
-    "labour": "labour_cost",
-    "labor":  "labour_cost",
     "profit": "profitability",
-    "occ":    "inventory",
-    "rooms":  "inventory",
-    "comp":   "rate_vs_share",
-    "rate":   "rate_vs_share",
-    "str":    "str_positioning",
+    "gop": "gop_margin",
+    "expenses": "undist_expenses",
+    "undist": "undist_expenses",
+    "occ": "occupancy",
+    "revenue": "revenue_trend",
+    "dept": "dept_expenses",
 }
 
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 def bootstrap():
     try:
-        from src.data.nimble_client import NimbleClient
+        from src.data.excel_loader import ExcelDataLoader
         from src.recommendations.rules import generate_recommendations
         from src.recommendations.explain import explain_recommendation
-        return NimbleClient, generate_recommendations, explain_recommendation
+        return ExcelDataLoader, generate_recommendations, explain_recommendation
     except ImportError as e:
         print(f"❌  Import error: {e}")
         print("    Run: pip install -r requirements.txt")
         sys.exit(1)
 
 
-def fetch(NimbleClient, generate_recommendations):
-    """Connect to mock API and load data + recommendations."""
-    try:
-        client = NimbleClient()
-    except Exception as e:
-        print(f"❌  Cannot connect to mock API: {e}")
-        print("    Run: python -m uvicorn mock_nimble_api.main:app --port 8000")
-        sys.exit(1)
-
-    daily  = client.get_daily_review(PROPERTY_ID, DATE_RANGE)
-    labour = client.get_labour(PROPERTY_ID, DATE_RANGE)
-    data   = {**daily, **labour}
-    recs   = generate_recommendations(PROPERTY_ID, DATE_RANGE, client)
-    return client, data, recs
+def fetch(loader, generate_recommendations, year, month=None):
+    """Load data from Excel and generate recommendations."""
+    data = loader.get_summary(year, month)
+    yoy = loader.get_year_over_year()
+    recs = generate_recommendations(data, yoy)
+    return data, recs, yoy
 
 
 # ── Formatters ───────────────────────────────────────────────────────────────
@@ -87,16 +78,16 @@ def fmt_rec(rec, idx=None):
     return "\n".join(lines)
 
 
-def cmd_status(data, recs):
-    rev  = data.get("revenue_summary", {})
-    prof = data.get("non_dep_exp_summary", {})
-    occ  = data.get("occupancy", {})
-
+def cmd_status(data, recs, year):
+    rev = data.get("revenue_summary", {})
+    non_dep = data.get("non_dep_exp_summary", {})
+    occ = data.get("occupancy", {})
     total_income = rev.get("total_income", 0)
-    ebitda       = prof.get("ebitda", 0)
-    net_income   = prof.get("net_income", 0)
-    occ_pct      = occ.get("pct") or occ.get("occupancy_pct", 0)
-    payroll_pct  = data.get("payroll_pct", 0)
+    ebitda = non_dep.get("ebitda", 0)
+    net_income = non_dep.get("net_income", 0)
+    occ_pct = occ.get("pct", 0)
+    gop_pct_raw = data.get("gop_pct", 0)
+    gop_pct = round(gop_pct_raw * 100, 1) if gop_pct_raw < 1 else round(gop_pct_raw, 1)
 
     health = "✅ Healthy" if not recs else (
         "🔴 Needs Attention" if any(r.severity.value == "severe" for r in recs)
@@ -105,14 +96,16 @@ def cmd_status(data, recs):
 
     print(f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  HOTEL STATUS  ({DATE_RANGE[0]} → {DATE_RANGE[1]})
+  HOTEL STATUS  ({data.get('period', year)})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Overall Health  : {health}
   Total Revenue   : ${total_income:,.2f}
   EBITDA          : ${ebitda:,.2f}
   Net Income      : ${net_income:,.2f}
   Occupancy       : {occ_pct}%
-  Payroll %       : {payroll_pct}%
+  ADR             : ${data.get('adr', {}).get('value', 0):,.2f}
+  RevPAR          : ${data.get('revpar', {}).get('value', 0):,.2f}
+  GOP %           : {gop_pct}%
   Open Issues     : {len(recs)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""")
 
@@ -140,90 +133,125 @@ def cmd_explain(area_raw, recs, explain_recommendation):
     print(f"\n🤖  Generating AI explanation for {rec.area} …\n")
     explanation = explain_recommendation(rec)
     print(f"  {explanation}\n")
-    print(f"  Numbers: {json.dumps(rec.numbers, indent=4)}\n")
+    print(f"  Numbers: {json.dumps(rec.numbers, indent=4, default=str)}\n")
 
 
-def cmd_labour(data):
-    payroll_pct = data.get("payroll_pct", 0)
-    depts       = data.get("payroll_department", [])
-    icon        = "🔴" if payroll_pct > 55 else ("🟡" if payroll_pct >= 45 else "✅")
-    print(f"\n{icon}  Payroll = {payroll_pct}% of revenue  (threshold 45%)")
-    if depts:
-        print("\n  Department breakdown:")
-        for d in depts:
-            bar = "█" * int(d.get("pct_of_budget", 0) // 10)
-            print(f"    {d['dept']:<20} {d.get('pct_of_budget',0):>5.1f}%  {bar}")
-    print()
+def cmd_revenue(data):
+    rev = data.get("revenue_summary", {})
+    total = rev.get("total_income", 0)
+    
+    def pct(v):
+        return round(v / total * 100, 1) if total > 0 else 0
+    
+    room = rev.get("room_revenue", 0)
+    fb = rev.get("fb_revenue", 0)
+    other = rev.get("other_revenue", 0)
+    misc = rev.get("misc_income", 0)
+    
+    print(f"""
+  📊 Revenue Breakdown — {data.get('period', '')}
+  ────────────────────────────────
+  Room Revenue    : ${room:>12,.2f}  ({pct(room)}%)
+  F&B Revenue     : ${fb:>12,.2f}  ({pct(fb)}%)
+  Other Operating : ${other:>12,.2f}  ({pct(other)}%)
+  Miscellaneous   : ${misc:>12,.2f}  ({pct(misc)}%)
+  ────────────────────────────────
+  TOTAL           : ${total:>12,.2f}
+""")
+
+
+def cmd_expenses(data):
+    dept = data.get("dep_exp_summary", {})
+    undist = data.get("undist_expenses", {})
+    total_rev = data.get("revenue_summary", {}).get("total_income", 1)
+    
+    dept_total = dept.get("total_dept_expenses", 0)
+    undist_total = undist.get("total", 0)
+    
+    print(f"""
+  💰 Expense Analysis — {data.get('period', '')}
+  ═══════════════════════════════════════
+  DEPARTMENTAL EXPENSES (${dept_total:,.0f}, {dept_total/total_rev*100:.1f}%)
+    Room       : ${dept.get('room_expenses', 0):>10,.0f}
+    F&B        : ${dept.get('fb_expenses', 0):>10,.0f}
+    Other      : ${dept.get('other_expenses', 0):>10,.0f}
+  
+  UNDISTRIBUTED EXPENSES (${undist_total:,.0f}, {undist_total/total_rev*100:.1f}%)
+    Admin & General           : ${undist.get('admin_general', 0):>10,.0f}
+    IT & Telecom              : ${undist.get('it_telecom', 0):>10,.0f}
+    Sales & Marketing         : ${undist.get('sales_marketing', 0):>10,.0f}
+    Franchise & Affiliation   : ${undist.get('franchise', 0):>10,.0f}
+    Property Ops & Maintenance: ${undist.get('property_ops_maint', 0):>10,.0f}
+    Utilities                 : ${undist.get('utilities', 0):>10,.0f}
+  
+  Management Fees    : ${data.get('mgmt_fees', {}).get('total', 0):>10,.0f}
+  Non-Operating Exp  : ${data.get('non_dep_exp_summary', {}).get('total_non_op_expenses', 0):>10,.0f}
+""")
 
 
 def cmd_profitability(data):
-    prof = data.get("non_dep_exp_summary", {})
-    ebitda     = prof.get("ebitda", 0)
-    net_income = prof.get("net_income", 0)
-    undist     = prof.get("undist_other_exp", 0)
-    total_inc  = data.get("revenue_summary", {}).get("total_income", 1)
-
+    non_dep = data.get("non_dep_exp_summary", {})
+    gop = data.get("gop", 0)
+    gop_pct_raw = data.get("gop_pct", 0)
+    gop_pct = round(gop_pct_raw * 100, 1) if gop_pct_raw < 1 else round(gop_pct_raw, 1)
+    ebitda = non_dep.get("ebitda", 0)
+    net_income = non_dep.get("net_income", 0)
+    interest = non_dep.get("interest_expense", 0)
+    depreciation = non_dep.get("depreciation", 0)
+    
     e_icon = "✅" if ebitda >= 0 else "🔴"
     n_icon = "✅" if net_income >= 0 else "🔴"
+    
     print(f"""
-  {e_icon}  EBITDA       : ${ebitda:,.2f}
-  {n_icon}  Net Income   : ${net_income:,.2f}
-      Undist Exp   : ${undist:,.2f}
-      Total Rev    : ${total_inc:,.2f}
+  📈 Profitability — {data.get('period', '')}
+  ────────────────────────────────
+  GOP              : ${gop:>12,.2f}  ({gop_pct}%)
+  {e_icon}  EBITDA          : ${ebitda:>12,.2f}
+  Interest Expense : ${interest:>12,.2f}
+  Depreciation     : ${depreciation:>12,.2f}
+  {n_icon}  Net Income      : ${net_income:>12,.2f}
 """)
 
 
 def cmd_occupancy(data):
     occ = data.get("occupancy", {})
-    total  = occ.get("total_rooms", 0)
-    ooo    = occ.get("out_of_order", 0)
-    sold   = occ.get("rooms_sold", 0)
-    pct    = occ.get("pct") or occ.get("occupancy_pct", 0)
-    ooo_p  = round(ooo / total * 100, 1) if total else 0
-    icon   = "🔴" if ooo_p > 3 else "✅"
-
     print(f"""
-  Total Rooms     : {total}
-  Rooms Sold      : {sold}
-  Occupancy %     : {pct}%
-  {icon}  Out-of-Order : {ooo} rooms ({ooo_p}%)  [threshold 3%]
+  🏨 Occupancy — {data.get('period', '')}
+  ────────────────────────────────
+  Rooms Available  : {int(occ.get('rooms_available', 0)):,}
+  Rooms Sold       : {int(occ.get('rooms_sold', 0)):,}
+  Occupancy %      : {occ.get('pct', 0)}%
+  ADR              : ${data.get('adr', {}).get('value', 0):,.2f}
+  RevPAR           : ${data.get('revpar', {}).get('value', 0):,.2f}
 """)
 
 
-def cmd_str(data):
-    s = data.get("str", {})
-    my_occ   = s.get("occupancy", {}).get("my_property", 0)
-    comp_occ = s.get("occupancy", {}).get("comp_set", 0)
-    my_adr   = s.get("adr", {}).get("my_property", 0)
-    comp_adr = s.get("adr", {}).get("comp_set", 0)
-    my_rev   = s.get("revpar", {}).get("my_property", 0)
-    comp_rev = s.get("revpar", {}).get("comp_set", 0)
-    occ_rank = s.get("occupancy", {}).get("rank", "N/A")
-    rev_rank = s.get("revpar", {}).get("rank", "N/A")
+def cmd_trends(data, year):
+    trends = data.get("monthly_trend", [])
+    if not trends:
+        print("  Monthly trend data only available for full-year view.")
+        return
+    
+    print(f"\n  📉 Monthly Trends — {year}")
+    print(f"  {'Month':<6} {'Revenue':>12} {'EBITDA':>12} {'Occ%':>6} {'ADR':>8}")
+    print(f"  {'─'*6} {'─'*12} {'─'*12} {'─'*6} {'─'*8}")
+    for t in trends:
+        print(f"  {t['month']:<6} ${t['revenue']:>10,.0f} ${t['ebitda']:>10,.0f} {t['occupancy_pct']:>5.1f}% ${t['adr']:>6.0f}")
+    print()
 
-    def arrow(mine, comp):
-        if mine > comp: return f"▲ +{mine-comp:.1f} vs comp"
-        if mine < comp: return f"▼ -{comp-mine:.1f} vs comp"
-        return "= tied"
 
-    print(f"""
-  ┌─────────────────────────────────┐
-  │  STR Comp-Set Benchmarking      │
-  ├──────────────┬─────────┬────────┤
-  │ Metric       │ Mine    │ Comp   │
-  ├──────────────┼─────────┼────────┤
-  │ Occupancy %  │ {my_occ:<7.1f} │ {comp_occ:<6.1f} │
-  │ ADR          │ ${my_adr:<6.2f} │ ${comp_adr:<5.2f} │
-  │ RevPAR       │ ${my_rev:<6.2f} │ ${comp_rev:<5.2f} │
-  ├──────────────┼─────────┼────────┤
-  │ Occ Rank     │ {str(occ_rank):<16} │
-  │ RevPAR Rank  │ {str(rev_rank):<16} │
-  └──────────────┴─────────┴────────┘
-""")
+def cmd_yoy(yoy):
+    print("\n  📊 Year-over-Year Comparison")
+    print(f"  {'Year':<6} {'Revenue':>14} {'EBITDA':>14} {'Net Income':>14} {'Occ%':>6} {'GOP%':>6}")
+    print(f"  {'─'*6} {'─'*14} {'─'*14} {'─'*14} {'─'*6} {'─'*6}")
+    for y_str, d in sorted(yoy.items()):
+        gop_val = d.get("gop_pct", 0)
+        gop_display = round(gop_val * 100, 1) if gop_val < 1 else round(gop_val, 1)
+        print(f"  {y_str:<6} ${d['revenue']:>12,.0f} ${d['ebitda']:>12,.0f} ${d['net_income']:>12,.0f} {d['occupancy_pct']:>5.1f}% {gop_display:>5.1f}%")
+    print()
 
 
 def cmd_data(data):
-    import json
     print()
     print(json.dumps(data, indent=2, default=str))
     print()
@@ -231,15 +259,19 @@ def cmd_data(data):
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 def main():
-    NimbleClient, generate_recommendations, explain_recommendation = bootstrap()
+    ExcelDataLoader, generate_recommendations, explain_recommendation = bootstrap()
+
+    loader = ExcelDataLoader()
+    current_year = DEFAULT_YEAR
 
     print("=" * 50)
     print("  🏨  NIMBLE INSIGHTS  —  Interactive Chatbot")
     print("=" * 50)
-    print("  Connecting to mock API …", end=" ", flush=True)
-    client, data, recs = fetch(NimbleClient, generate_recommendations)
+    print("  Loading Excel data …", end=" ", flush=True)
+    data, recs, yoy = fetch(loader, generate_recommendations, current_year)
     print("done ✅")
-    print(f"  Loaded data · {len(recs)} recommendation(s) found")
+    print(f"  Loaded {data.get('property_name', 'Hotel')} · {len(recs)} recommendation(s)")
+    print(f"  Available years: {loader.get_available_years()}")
     print("  Type  help  to see commands, or  quit  to exit")
     print("=" * 50)
 
@@ -254,8 +286,8 @@ def main():
             continue
 
         parts = raw.lower().split(maxsplit=1)
-        cmd   = parts[0]
-        arg   = parts[1] if len(parts) > 1 else ""
+        cmd = parts[0]
+        arg = parts[1] if len(parts) > 1 else ""
 
         if cmd in ("quit", "exit", "bye", "q"):
             print("\nGoodbye! 👋\n")
@@ -265,19 +297,22 @@ def main():
             print(HELP_TEXT)
 
         elif cmd == "status":
-            cmd_status(data, recs)
+            cmd_status(data, recs, current_year)
 
         elif cmd == "recommendations":
             cmd_recommendations(recs)
 
         elif cmd == "explain":
             if not arg:
-                print("  Usage: explain <area>  (e.g.  explain labour_cost)")
+                print("  Usage: explain <area>  (e.g.  explain profitability)")
             else:
                 cmd_explain(arg.strip(), recs, explain_recommendation)
 
-        elif cmd == "labour":
-            cmd_labour(data)
+        elif cmd == "revenue":
+            cmd_revenue(data)
+
+        elif cmd == "expenses":
+            cmd_expenses(data)
 
         elif cmd == "profitability":
             cmd_profitability(data)
@@ -285,21 +320,35 @@ def main():
         elif cmd == "occupancy":
             cmd_occupancy(data)
 
-        elif cmd == "str":
-            cmd_str(data)
+        elif cmd == "trends":
+            cmd_trends(data, current_year)
+
+        elif cmd == "yoy":
+            cmd_yoy(yoy)
 
         elif cmd == "data":
             cmd_data(data)
 
-        elif cmd == "refresh":
-            print("  🔄  Refreshing data …", end=" ", flush=True)
-            client, data, recs = fetch(NimbleClient, generate_recommendations)
-            print(f"done ✅  ({len(recs)} recommendation(s))")
+        elif cmd == "year":
+            if not arg:
+                print(f"  Current year: {current_year}")
+                print(f"  Available: {loader.get_available_years()}")
+            else:
+                try:
+                    new_year = int(arg.strip())
+                    if new_year in loader.get_available_years():
+                        current_year = new_year
+                        data, recs, yoy = fetch(loader, generate_recommendations, current_year)
+                        print(f"  ✅ Switched to {current_year} · {len(recs)} recommendation(s)")
+                    else:
+                        print(f"  ❌ Year {new_year} not available. Available: {loader.get_available_years()}")
+                except ValueError:
+                    print(f"  ❌ Invalid year: '{arg}'")
 
         else:
             # Fuzzy match help
-            candidates = ["status", "labour", "profitability", "occupancy",
-                          "str", "recommendations", "explain", "data", "refresh"]
+            candidates = ["status", "revenue", "expenses", "profitability", "occupancy",
+                          "trends", "yoy", "recommendations", "explain", "data", "year"]
             matches = [c for c in candidates if cmd in c or c in cmd]
             hint = f"  Did you mean: {', '.join(matches)}?" if matches else ""
             print(f"  ❓  Unknown command '{cmd}'.  Type  help  for options.{hint}")
